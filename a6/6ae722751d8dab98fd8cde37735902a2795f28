@@ -1,0 +1,18 @@
+Thaw.xcodeproj/project.pbxproj
+  h_0cc3b7d7475c37 438,441,456-458,473,476,491-493,504-505,513-514,532-533,541-542
+Thaw/Resources/Info.plist
+  h_0cc3b7d7475c37 9,12,17
+Thaw/Main/AppDelegate.swift
+  h_0cc3b7d7475c37 128,136,141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a66ae722751d8dab98fd8cde37735902a2795f28",
+  "prompts": {},
+  "humans": {
+    "h_0cc3b7d7475c37": {
+      "author": "eleanor.zhu <eleanore.zhu@gmail.com>"
+    }
+  }
+}
