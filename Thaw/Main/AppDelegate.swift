@@ -125,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard
             let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
             let url = URL(string: urlString),
-            url.scheme?.lowercased() == "thaw"
+            url.scheme?.lowercased() == "thaw15"
         else { return }
         handleURL(url)
     }
@@ -133,12 +133,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Dispatches an incoming `thaw://` URL to the appropriate action.
     ///
     /// Supported URLs:
-    /// - `thaw://toggle-hidden` — toggle the hidden menu bar section
+    /// - `thaw15://toggle-hidden` — toggle the hidden menu bar section
     /// - `thaw://toggle-always-hidden` — toggle the always-hidden menu bar section
     /// - `thaw://search` — open the menu bar item search panel
     /// - `thaw://toggle-thawbar` — toggle the IceBar on the active display
     /// - `thaw://toggle-application-menus` — toggle application menus
-    /// - `thaw://open-settings` — open the Thaw settings window
+    /// - `thaw15://open-settings` — open the Thaw15 settings window
     private func handleURL(_ url: URL) {
         let host = url.host?.lowercased() ?? ""
         switch host {
