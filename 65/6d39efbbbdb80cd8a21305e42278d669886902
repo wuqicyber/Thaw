@@ -1,0 +1,23 @@
+Thaw/MenuBar/IceBar/IceBar.swift
+  s_cf2ce3be5a2ce7::t_04121ac6b0f618 534,537-541,547-553,555,566,569,573-577,583-596
+Thaw/MenuBar/MenuBarItems/MenuBarItemManager.swift
+  s_cf2ce3be5a2ce7::t_fb34d0292024f4 2153,2411,2440-2446,2723-2746,2784-2790,2793,2838,2852,2883-2886,2889-2894,2903,2924-2939,2967-2969,2979-2980
+Thaw/Utilities/MouseHelpers.swift
+  s_cf2ce3be5a2ce7::t_698511369cac7c 133-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "656d39efbbbdb80cd8a21305e42278d669886902",
+  "prompts": {},
+  "sessions": {
+    "s_cf2ce3be5a2ce7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a102f3-5160-7873-a7f1-4d680187effd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "eleanor.zhu <eleanore.zhu@gmail.com>"
+    }
+  }
+}
