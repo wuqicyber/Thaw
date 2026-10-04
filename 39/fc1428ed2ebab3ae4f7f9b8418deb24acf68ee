@@ -1,0 +1,22 @@
+Shared/Utilities/AXHelpers.swift
+  h_0cc3b7d7475c37 51-123
+Thaw/MenuBar/ControlItem/ControlItem.swift
+  h_0cc3b7d7475c37 412-420
+Thaw/MenuBar/IceBar/IceBar.swift
+  h_0cc3b7d7475c37 548,550-551,554-555,577,580-581
+Thaw/MenuBar/MenuBarItems/MenuBarItemManager.swift
+  h_0cc3b7d7475c37 2747-2940,2960-2963,3079-3092,3101-3104,3113-3119
+Thaw/MenuBar/MenuBarManager.swift
+  h_0cc3b7d7475c37 49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "39fc1428ed2ebab3ae4f7f9b8418deb24acf68ee",
+  "prompts": {},
+  "humans": {
+    "h_0cc3b7d7475c37": {
+      "author": "eleanor.zhu <eleanore.zhu@gmail.com>"
+    }
+  }
+}
