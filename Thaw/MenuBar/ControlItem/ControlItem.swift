@@ -409,6 +409,15 @@ final class ControlItem {
         }
     }
 
+    /// Applies the current state immediately instead of waiting for the
+    /// published-state subscriber to run on the next main-queue turn.
+    ///
+    /// Temporary reveal operations use this when the following step depends
+    /// on the status item's length having already changed.
+    func applyCurrentState() {
+        updateStatusItem()
+    }
+
     /// Updates the visibility of the status item.
     ///
     /// The hidden and always-hidden control items must always be present in

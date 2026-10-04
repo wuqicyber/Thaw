@@ -545,11 +545,14 @@ private struct IceBarItemView: View {
                     IceBarItemView.diagLog.debug("leftClick: ✓ completed in \(Int(duration * 1000))ms (on-screen path)")
                 } else {
                     let ok = await itemManager.temporarilyShow(item: item, clickingWith: .left, on: displayID, fastPath: true)
-                    if !ok {
+                    if !ok, Bridging.isWindowOnScreen(item.windowID) {
                         // Fallback: item moved into view but click failed.
-                        // Try one direct click with live bounds.
+                        // Try one direct click with live bounds, but never click
+                        // the stale off-screen location when the move itself failed.
                         IceBarItemView.diagLog.warning("leftClick: temp-show click failed, attempting fallback click")
                         try? await itemManager.click(item: item, with: .left)
+                    } else if !ok {
+                        IceBarItemView.diagLog.error("leftClick: temp-show move failed; skipping off-screen fallback click")
                     }
                     let duration = Date.now.timeIntervalSince(clickStartTime)
                     IceBarItemView.diagLog.debug("leftClick: ✓ completed in \(Int(duration * 1000))ms (temp-show path, ok=\(ok))")
@@ -571,9 +574,11 @@ private struct IceBarItemView: View {
                     try await itemManager.click(item: item, with: .right)
                 } else {
                     let ok = await itemManager.temporarilyShow(item: item, clickingWith: .right, on: displayID, fastPath: true)
-                    if !ok {
+                    if !ok, Bridging.isWindowOnScreen(item.windowID) {
                         IceBarItemView.diagLog.warning("rightClick: temp-show click failed, attempting fallback click")
                         try? await itemManager.click(item: item, with: .right)
+                    } else if !ok {
+                        IceBarItemView.diagLog.error("rightClick: temp-show move failed; skipping off-screen fallback click")
                     }
                 }
             }

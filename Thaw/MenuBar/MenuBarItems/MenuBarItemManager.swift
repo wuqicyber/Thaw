@@ -2744,6 +2744,200 @@ extension MenuBarItemManager {
         }
     }
 
+    /// Sends a normal global mouse click at the item's live on-screen bounds.
+    ///
+    /// Unlike ``click(item:with:skipInputPause:)``, this goes through the HID
+    /// event tap instead of addressing the item's process window directly.
+    /// Custom status-item views that ignore process-targeted synthetic events
+    /// generally handle this path like a physical mouse click.
+    private func clickGlobally(item: MenuBarItem, with mouseButton: CGMouseButton) async throws {
+        do {
+            try await eventSemaphore.wait(timeout: .seconds(5))
+        } catch is SimpleSemaphore.TimeoutError {
+            await eventSemaphore.signal()
+            throw EventError.cannotComplete
+        }
+        defer { Task.detached { [eventSemaphore] in await eventSemaphore.signal() } }
+
+        let clickPoint = try await getCurrentBounds(for: item).center
+        let originalMouseLocation = try getMouseLocation()
+        let source = try getEventSource(with: .combinedSessionState)
+        try permitLocalEvents()
+
+        let eventTypes: (down: CGEventType, up: CGEventType) = switch mouseButton {
+        case .left: (.leftMouseDown, .leftMouseUp)
+        case .right: (.rightMouseDown, .rightMouseUp)
+        default: (.otherMouseDown, .otherMouseUp)
+        }
+
+        guard
+            let mouseDown = CGEvent(
+                mouseEventSource: source,
+                mouseType: eventTypes.down,
+                mouseCursorPosition: clickPoint,
+                mouseButton: mouseButton
+            ),
+            let mouseUp = CGEvent(
+                mouseEventSource: source,
+                mouseType: eventTypes.up,
+                mouseCursorPosition: clickPoint,
+                mouseButton: mouseButton
+            )
+        else {
+            throw EventError.eventCreationFailure(item)
+        }
+
+        MouseHelpers.warpCursor(to: clickPoint)
+        MouseHelpers.hideCursor()
+        defer {
+            MouseHelpers.warpCursor(to: originalMouseLocation)
+            MouseHelpers.showCursor()
+        }
+
+        mouseDown.post(tap: .cgSessionEventTap)
+        await eventSleep(for: .milliseconds(15))
+        mouseUp.post(tap: .cgSessionEventTap)
+        await eventSleep(for: .milliseconds(100))
+    }
+
+    /// Clicks an item that refuses synthetic Command-drag events by briefly
+    /// collapsing its section's spacer. The item keeps its normal menu bar
+    /// position, so custom status-item implementations can receive a regular
+    /// click without being individually relocated first.
+    private func clickByTemporarilyRevealingSection(
+        item: MenuBarItem,
+        with mouseButton: CGMouseButton,
+        in sectionName: MenuBarSection.Name
+    ) async -> Bool {
+        guard
+            sectionName != .visible,
+            let menuBarManager = appState?.menuBarManager,
+            let section = menuBarManager.section(withName: sectionName)
+        else {
+            return false
+        }
+
+        let wasHidingApplicationMenus = menuBarManager.isHidingApplicationMenus
+        if !wasHidingApplicationMenus {
+            menuBarManager.hideApplicationMenus()
+        }
+
+        let previousDesiredState = section.desiredState
+        section.desiredState = .showSection
+        section.updateControlItemState()
+        section.controlItem.applyCurrentState()
+
+        let restoreSection = {
+            if section.desiredState == .showSection {
+                section.desiredState = previousDesiredState
+                section.updateControlItemState()
+                section.controlItem.applyCurrentState()
+            }
+            if !wasHidingApplicationMenus {
+                menuBarManager.showApplicationMenus()
+            }
+        }
+
+        func isItemWithinAnyScreen() -> Bool {
+            guard let bounds = Bridging.getWindowBounds(for: item.windowID) else {
+                return false
+            }
+            // CGWindow and NSScreen use different vertical origins, but menu
+            // bar items always occupy the menu bar. Horizontal intersection is
+            // the reliable signal that the spacer no longer pushes this item
+            // off-screen.
+            return NSScreen.screens.contains { screen in
+                bounds.maxX > screen.frame.minX && bounds.minX < screen.frame.maxX
+            }
+        }
+
+        let deadline = ContinuousClock.now + .seconds(1)
+        while !isItemWithinAnyScreen(), ContinuousClock.now < deadline {
+            await eventSleep(for: .milliseconds(15))
+        }
+
+        guard isItemWithinAnyScreen() else {
+            MenuBarItemManager.diagLog.error("Inline reveal did not bring \(item.logString) on-screen")
+            restoreSection()
+            return false
+        }
+
+        // hideApplicationMenus activates Thaw asynchronously after a short
+        // delay. Wait for that activation so the revealed status item is not
+        // still covered by the previous app's menu at the same coordinates.
+        if !wasHidingApplicationMenus {
+            await eventSleep(for: .milliseconds(50))
+        }
+
+        let idsBeforeClick = Set(WindowInfo.createWindows(option: .onScreen).map(\.windowID))
+        let sourcePID = item.sourcePID ?? item.ownerPID
+
+        do {
+            let currentBounds = Bridging.getWindowBounds(for: item.windowID) ?? item.bounds
+            let usedAccessibilityPress = mouseButton == .left && AXHelpers.pressMenuBarItem(
+                forPID: sourcePID,
+                matching: currentBounds
+            )
+
+            if usedAccessibilityPress {
+                MenuBarItemManager.diagLog.debug("Inline reveal used AXPress for \(item.logString)")
+            } else {
+                try await clickGlobally(item: item, with: mouseButton)
+                MenuBarItemManager.diagLog.debug("Inline reveal used global click for \(item.logString)")
+            }
+            await eventSleep(for: .milliseconds(100))
+
+            let shownInterfaceWindow = WindowInfo.createWindows(option: .onScreen).first { window in
+                window.ownerPID == sourcePID && !idsBeforeClick.contains(window.windowID)
+            }
+
+            // Keep the real status item on-screen while its menu or popover is
+            // open. Restoring the spacer immediately would move the anchor back
+            // off-screen and dismiss the interface before the user can see it.
+            Task { @MainActor [weak section, weak menuBarManager] in
+                guard let section, let menuBarManager else { return }
+                let startedAt = Date.now
+                let deadline = startedAt.addingTimeInterval(15)
+
+                while Date.now < deadline {
+                    await eventSleep(for: .milliseconds(250))
+
+                    if Date.now.timeIntervalSince(startedAt) < 2 {
+                        continue
+                    }
+
+                    let trackedWindowIsVisible = shownInterfaceWindow
+                        .flatMap { WindowInfo(windowID: $0.windowID) }?
+                        .isOnScreen == true
+                    let appHasVisiblePopup = WindowInfo.createWindows(option: .onScreen).contains { window in
+                        guard window.ownerPID == sourcePID else { return false }
+                        return window.isMenuRelated || window.layer > CGWindowLevelForKey(.normalWindow)
+                    }
+
+                    if !trackedWindowIsVisible, !appHasVisiblePopup {
+                        break
+                    }
+                }
+
+                if section.desiredState == .showSection {
+                    section.desiredState = previousDesiredState
+                    section.updateControlItemState()
+                    section.controlItem.applyCurrentState()
+                }
+                if !wasHidingApplicationMenus {
+                    menuBarManager.showApplicationMenus()
+                }
+            }
+
+            MenuBarItemManager.diagLog.debug("Inline reveal fallback clicked \(item.logString)")
+            return true
+        } catch {
+            MenuBarItemManager.diagLog.error("Inline reveal fallback failed for \(item.logString): \(error)")
+            restoreSection()
+            return false
+        }
+    }
+
     /// Schedules a timer for the given interval that rehides the
     /// temporarily shown items when fired.
     private func runRehideTimer(for interval: TimeInterval? = nil) {
@@ -2763,6 +2957,10 @@ extension MenuBarItemManager {
         }
         // Also rehide when frontmost app changes (smart-ish).
         rehideCancellable = NSWorkspace.shared.publisher(for: \.frontmostApplication)
+            // KVO publishes the current value immediately. Without dropping
+            // that initial emission, rescheduling while an item's menu is open
+            // creates a subscribe → rehide → resubscribe feedback loop.
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
@@ -2878,6 +3076,20 @@ extension MenuBarItemManager {
             appState.hidEventManager.startAll()
         }
 
+        // Scroll Reverser's custom status item does not accept the synthetic
+        // Command-drag used by move(). Skip three guaranteed timeouts and go
+        // straight to the inline reveal + AXPress path.
+        if fastPath, item.tag.namespace.description == "com.pilotmoon.scroll-reverser" {
+            pendingRelocations.removeValue(forKey: tagIdentifier)
+            pendingReturnDestinations.removeValue(forKey: tagIdentifier)
+            persistPendingRelocations()
+            return await clickByTemporarilyRevealingSection(
+                item: item,
+                with: mouseButton,
+                in: originalSection
+            )
+        }
+
         MenuBarItemManager.diagLog.debug("Temporarily showing \(item.logString) on display \(resolvedDisplayID)")
 
         // Capture the item's origin before the move so the fast-path settle
@@ -2886,12 +3098,10 @@ extension MenuBarItemManager {
 
         do {
             if fastPath {
-                // Two-attempt move on the fast path. The first attempt almost always
-                // repositions the item correctly; the second is a cheap safety net for
-                // the rare case where the event cycle is dropped under CPU load.
-                // Keeping retries at 2 (vs. the default 8) avoids the visible jitter
-                // from a long retry loop while still tolerating one bad cycle.
-                try await move(item: item, to: moveDestination, on: resolvedDisplayID, skipInputPause: true, maxMoveAttempts: 2)
+                // A third attempt is enough for slow-but-movable items while
+                // keeping the failure path responsive. Items that reject the
+                // synthetic drag use the inline-reveal fallback below.
+                try await move(item: item, to: moveDestination, on: resolvedDisplayID, skipInputPause: true, maxMoveAttempts: 3)
             } else {
                 try await move(item: item, to: moveDestination, on: resolvedDisplayID, skipInputPause: true)
             }
@@ -2900,6 +3110,13 @@ extension MenuBarItemManager {
             pendingRelocations.removeValue(forKey: tagIdentifier)
             pendingReturnDestinations.removeValue(forKey: tagIdentifier)
             persistPendingRelocations()
+            if fastPath {
+                return await clickByTemporarilyRevealingSection(
+                    item: item,
+                    with: mouseButton,
+                    in: originalSection
+                )
+            }
             return false
         }
 

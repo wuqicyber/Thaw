@@ -46,7 +46,7 @@ final class MenuBarManager: ObservableObject {
     private var averageColorRefreshCancellable: AnyCancellable?
 
     /// A Boolean value that indicates whether the application menus are hidden.
-    private var isHidingApplicationMenus = false
+    private(set) var isHidingApplicationMenus = false
 
     /// A Boolean value that indicates whether the application menus were hidden
     /// by a manual toggle (URL/hotkey), rather than automatically by section state.
